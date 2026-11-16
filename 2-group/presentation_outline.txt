@@ -1,0 +1,238 @@
+PRESENTATION OUTLINE: Fundraising, who should receive a thank-you kit?
+MATH 60603 Statistical Learning, Assignment #1 (sessions 11-12)
+=====================================================================
+
+Submitted method: X-learner (part 2). All numbers below come from
+2-group/outputs/ and 1-ai/ (README), measured on the 2025 pilot with
+cross-validation. Re-check them after any re-run of main.R.
+
+The prof questions EVERY member, so each person should be able to explain
+every slide, not just their own. Suggested owner per slide in [brackets].
+Target: ~12-15 slides, ~15 min.
+
+Reminder: the main grading criterion is "understanding the capabilities of AI"
+and the value a data scientist adds. Keep coming back to that comparison.
+
+
+---------------------------------------------------------------------
+SLIDE 1: Title
+---------------------------------------------------------------------
+- "Who should get a thank-you kit? AI alone vs. AI + data scientists"
+- Team names, course, date
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 2: The business problem
+---------------------------------------------------------------------
+- 1,000,000 members; foundation can mail a thank-you kit before the 2026 campaign
+- Cost: first 60,000 kits at $5, every kit after that at $25
+- Goal: maximize donations MINUS kit cost
+- Key point: members can donate without a kit, so a kit is worth sending only
+  if the EXTRA money it brings in is more than its cost
+  -> this is an UPLIFT (causal) problem, not "who donates the most"
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 3: The data
+---------------------------------------------------------------------
+- Members (demographics), donation history 2014-2025, 2025 newsletter reads,
+  2025 social media activity, 2025 pilot list
+- The pilot: 20,000 members (2%) got a kit AT RANDOM in 2025
+  -> randomization is what lets us measure the kit's causal effect
+- Average 2025 donation: $36.48 with kit vs $6.35 without -> uplift ~$30
+- Data quirks we handled: ID 9e+06 stored as a decimal; social data has
+  no ID (only 72k emails match)
+- VISUAL: small table of the 5 files + row counts
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 4: Framing the problem (target and predictors)
+---------------------------------------------------------------------
+- The brief left target and predictors to us. Our choices:
+  - Target: 2025 donation amount (0 if no donation)
+  - Treatment: received the 2025 pilot kit
+  - Estimand: individual uplift = E[donation | kit, x] - E[donation | no kit, x]
+- Decision rule: rank by uplift; send while uplift > marginal cost
+  ($5 for the first 60k, $25 after)
+- Train on "member as of end of 2024" -> predict 2025; score 2026 using data
+  up to 2025 (same one-year shift)
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 5: Part 1, what the AI did alone
+---------------------------------------------------------------------
+- Claude Opus 5.5 (Claude Code), given only the PDF + data, no guidance
+- It found the uplift framing by itself and used a T-learner
+  (two LightGBM models: kit vs no-kit, uplift = difference)
+- Result: 454,540 kits, net gain $13.76M on the pilot
+  (vs $3.53M for random members, $6.33M for kits to everyone)
+- Honest take: the AI did surprisingly well; the framing was right
+- Things it flagged but didn't fix: social data under-used, 2025 donations of
+  pilot members inflated by their kit
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 6: Where we thought a data scientist could add value
+---------------------------------------------------------------------
+1. Features: more of the available data, better history features
+2. Model choice: T-learner is weak when the treated group is tiny (2%)
+3. Leakage: pilot members' 2025 donations were boosted by the kit
+4. Rigor: are differences between models real or just noise?
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 7: Feature engineering
+---------------------------------------------------------------------
+- Social accounts matched by name as well as email, only when the name is
+  unique on both sides (names aren't unique: 780k names for 1M members)
+- New history features: gifts in last 3 years, years since first gift,
+  gifts per year of membership; newsletter reads in 2nd half of 2025
+- 22 features total (demographics, history, newsletter, social)
+- Assumption: newsletter reads unaffected by the kit (1.76 vs 1.77 issues read)
+- Effect alone: T-learner $13.76M -> $13.90M
+- FILL IN: how many accounts were linked by name (printed when main.R runs)
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 8: Why the X-learner (core methodology slide)
+---------------------------------------------------------------------
+- T-learner problem: the kit model is trained on only 20k members, so its
+  noise dominates the uplift estimate
+- X-learner (Kunzel et al., 2019), designed for unbalanced groups:
+  1. Fit mu0 (no-kit, 980k members) and mu1 (kit, 20k members)
+  2. Impute each person's effect using the OTHER group's model:
+       kit members:    D1 = y - mu0(x)
+       no-kit members: D0 = mu1(x) - y
+  3. Regress D1 and D0 on x -> tau1, tau0
+  4. Blend: tau(x) = e*tau0(x) + (1-e)*tau1(x), with e = 2%
+     -> 98% of the weight on tau1, which relies on the precise mu0
+- All base models: LightGBM with early stopping
+- VISUAL: 3-step diagram
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 9: Models compared
+---------------------------------------------------------------------
+- Same 5 cross-validation folds for every model (fair comparison)
+- T-learner (part 1 baseline), X-learner, causal forest (grf package,
+  Athey/Tibshirani/Wager 2019), simple average of the three
+- Causal forest: splits directly on effect heterogeneity, honest
+  estimation; known propensity (2%) passed in since the pilot was random
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 10: Results (main table)
+---------------------------------------------------------------------
+  Learner         Kits      Net gain   vs T-learner [95% bootstrap CI]
+  T-learner      454,067    $13.90M    -
+  X-learner      458,924    $14.14M    +$235k  [-$36k, +$475k]
+  Causal forest  477,811    $13.77M    -$131k  [-$412k, +$262k]
+  Average        464,650    $13.95M    +$51k   [-$204k, +$308k]
+  (Part 1 AI)    454,540    $13.76M
+
+- Paired bootstrap: 200 resamples, every model scored on the same resample
+- Honest message: X-learner is best, but the interval just touches zero
+  -> likely better, not proven better
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 11: Is the model calibrated? (X-learner, by tenth of members)
+---------------------------------------------------------------------
+  Tenth   Predicted   Actual
+    1      $84.52     $87.25
+    2      $59.41     $58.55
+    3      $44.44     $44.21
+    4      $33.56     $37.02
+    5      $25.71     $24.19
+    6      $19.28     $20.11
+    7      $14.87     $13.66
+    8      $10.84     $10.58
+    9       $7.60      $5.36
+   10       $2.06      $2.27
+- Predictions track the real pilot uplift closely -> we can trust the
+  "uplift > $25" cut-off
+- VISUAL: bar chart predicted vs actual (from uplift_by_decile.csv)
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 12: How many kits? (profit curve)
+---------------------------------------------------------------------
+- VISUAL: net gain vs number of kits sent (profit_curve.csv, x_learner)
+- Curve peaks around ~460k kits ($14.17M), so our cut-off is in the right place
+- Going past 60k is worth it: the kit pays for itself even at $25 for
+  nearly half the members. Stopping at 60k cheap kits gives only ~$5M
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 13: Final 2026 decision
+---------------------------------------------------------------------
+- X-learner refit on all 1M members, scored with data up to 2025
+- Fix vs part 1: the 20k pilot members keep their pre-pilot features
+  (their 2025 donations were inflated by the kit)
+- Send 452,954 kits; cost $10.12M; predicted net gain ~$13.99M
+- Leaderboard result: FILL IN once uploading is allowed
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 14: Limitations
+---------------------------------------------------------------------
+- Assumes 2026 members react like 2025 members (same kit, same response)
+- Only one pilot, 20k treated, so the uplift estimates for small segments are noisy
+- Gains vs T-learner are within noise; differences are modest
+- Name matching for social data may contain a few wrong links
+- Newsletter/social data are 2025 only (same year as the pilot)
+[owner: ___]
+
+
+---------------------------------------------------------------------
+SLIDE 15: Conclusion: what is the data scientist worth?
+---------------------------------------------------------------------
+- AI alone: correct framing + solid model -> $13.76M
+- AI + course knowledge: ~$14.1M, about +$0.4M (~3%) on the pilot
+- Where we added value: method choice for unbalanced treatment, spotting
+  leakage, using more data carefully, and measuring uncertainty (knowing
+  which gains are real)
+- Where AI was already strong: the framing, code, standard ML
+- Takeaway: in a mature organization (randomized pilot already run), AI
+  gets most of the way; the expert's value is in rigor and judgment
+[owner: ___]
+
+
+---------------------------------------------------------------------
+BACKUP SLIDES (for questions)
+---------------------------------------------------------------------
+B1. Full feature list (22 features, see FEATURES in 2-group/features.R)
+B2. LightGBM settings: learning rate 0.05, early stopping on 10% holdout,
+    smaller trees (8 leaves) for the 20k kit-member models
+B3. Bootstrap method: Poisson(1) weights, paired across learners
+B4. Calibration tables for T-learner and causal forest
+B5. Why not a classification model ("will they donate?"): ignores the kit's
+    effect and donation size
+B6. R code structure: main.R / features.R / learners.R, run with
+    Rscript 2-group/main.R --learner x_learner
+
+
+---------------------------------------------------------------------
+LIKELY QUESTIONS: every member should be able to answer
+---------------------------------------------------------------------
+- Why uplift and not just predicted donation?
+- Why does randomization matter? What if the pilot had targeted top donors?
+- Explain the X-learner in your own words. Why is it better with 2% treated?
+- What does the bootstrap interval tell you? Is the X-learner really better?
+- Why send kits beyond 60,000 at $25?
+- What is leakage here, and how did you handle it?
+- How would you validate this decision in 2026 (e.g., keep a random holdout)?
+- How much did the AI do vs the team?
