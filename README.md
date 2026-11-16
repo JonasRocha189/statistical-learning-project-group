@@ -15,7 +15,7 @@ The assignment has two parts, and the point is to compare them:
 | Part | Folder | What it is |
 |---|---|---|
 | 1 | [1-ai/](1-ai/) | The solution an AI produces when used by someone with no data science training. |
-| 2 | [2-group/](2-group/) | The team's own solution, using course knowledge (AI still allowed). Not started yet. |
+| 2 | [2-group/](2-group/) | The team's own solution, using course knowledge (AI still allowed). |
 
 The code is in R, which the brief says is rewarded. An earlier Python version of part 1 is kept in [python/](python/) for reference; it uses the same approach and is no longer maintained.
 
@@ -43,19 +43,24 @@ Things to know before using them:
 
 ## How to run
 
-The project needs R (tested with 4.4.2) and two packages, installed once from an R console:
+The project needs R (tested with 4.4.2 and 4.5.2) and three packages, installed once from an R console:
 
 ```
-install.packages(c("data.table", "lightgbm"))
+install.packages(c("data.table", "lightgbm", "grf"))
 ```
 
-Then, from this folder:
+`grf` is only used by part 2. Then, from this folder:
 
 ```
 Rscript 1-ai/main.R
+Rscript 2-group/main.R
 ```
 
-The run takes about a minute and a half and writes its results to `1-ai/outputs/`. Results are identical from one run to the next (fixed seed).
+On Windows, if `Rscript` is not recognized, R's `bin` folder is not on the PATH: use the full path instead, for example `& "C:\Program Files\R\R-4.5.2\bin\Rscript.exe" 2-group/main.R` in PowerShell.
+
+Part 1 takes about a minute and a half and writes its results to `1-ai/outputs/`. Part 2 takes longer, mostly because of the causal forest, and writes to `2-group/outputs/`. Results are identical from one run to the next (fixed seed). The `outputs/` folders are not committed to git.
+
+The options below are for part 1; part 2's are listed in its own section.
 
 Options:
 
@@ -126,3 +131,54 @@ These figures are *extra* money compared with sending no kits. The leaderboard s
 - **Social data is under-used.** Only the 72,069 accounts with a matching email are used. About 180,000 accounts share a name with a member, but names are not unique (780,527 distinct names for 1,000,000 members), so they were left out.
 
 Suggested leaderboard comment: `AI only - Claude Opus 5.5 - R, two-model uplift (LightGBM), send if uplift > marginal cost, 461,805 kits`.
+
+## Part 2: the group version
+
+Same question and same decision rule as part 1, with three changes a data scientist would make. The code is split into [features.R](2-group/features.R) (data and features), [learners.R](2-group/learners.R) (uplift models) and [main.R](2-group/main.R) (comparison and final decision). The submitted method is the **X-learner**.
+
+### What changed from part 1
+
+1. **More of the data, used carefully.**
+   - Social accounts are matched by name as well as by email, but only when the name belongs to exactly one member and exactly one unmatched account, since names are not unique.
+   - New history features: donations in the last three years, years since the first gift, and gifts per year of membership.
+   - Newsletter reads in the second half of 2025.
+   - 22 features in total.
+2. **A model suited to a 2% kit group.** Part 1's T-learner fits a separate model on the 20,000 kit members, and that model's noise dominates the uplift. The **X-learner** (Künzel et al., 2019) estimates each kit member's effect as their donation minus what the precise no-kit model (980,000 members) predicts for them, then models those effects. A causal forest (`grf`, Athey, Tibshirani & Wager, 2019) and the average of the three learners were also compared.
+3. **Fixing a leak and measuring uncertainty.**
+   - For the 2026 scoring, the 20,000 pilot members keep their pre-pilot features, because their 2025 donations were inflated by the kit. This fixes an open point from part 1.
+   - All learners are cross-validated on the same five folds.
+   - A paired bootstrap (200 resamples) gives an interval for each learner's gain against the T-learner.
+
+### Results
+
+Net gain of each learner's decision, measured on the 2025 pilot (cross-validated):
+
+| Learner | Kits | Net gain | Gain vs T-learner (95% bootstrap interval) |
+|---|---|---|---|
+| T-learner (part 1's method, new features) | 454,067 | $13,902,453 | |
+| **X-learner** | 458,924 | **$14,137,815** | +$235,362 (−$36,497 to +$474,774) |
+| Causal forest | 477,811 | $13,771,116 | −$131,337 (−$411,598 to +$261,651) |
+| Average of the three | 464,650 | $13,953,511 | +$51,058 (−$204,487 to +$307,808) |
+
+For comparison, part 1 scored $13,756,904 on the same check. The new features alone add about $145,000 to the T-learner, and the X-learner about $235,000 more. The X-learner's interval just includes zero, so it is probably better than the T-learner but not proven better.
+
+The X-learner's predictions match the real pilot uplift closely across tenths of members, from $84.52 predicted vs $87.25 actual in the top tenth down to $2.06 vs $2.27 in the bottom one. The full table for every learner is in `uplift_by_decile.csv`.
+
+The final decision for 2026 sends **452,954 kits** (cost $10,123,850) for a predicted net gain of $13,992,172.
+
+### Options and outputs
+
+| Option | Effect |
+|---|---|
+| `--learner NAME` | Model used for the final decision: `t_learner`, `x_learner`, `causal_forest` or `ensemble`. Default: whichever has the highest net gain on the pilot (currently the X-learner). |
+| `--folds N` | Number of cross-validation folds (default 5). |
+
+The output files are the same as in part 1, plus `learner_comparison.csv`, which holds the results table above. `uplift_by_decile.csv` and `profit_curve.csv` have one block per learner.
+
+### Open points
+
+- **Not yet uploaded:** uploading to the leaderboard is not allowed yet.
+- **Same 2026 assumption as part 1:** members are assumed to react to the 2026 kit as they did to the 2025 one.
+- **Possible wrong links:** matching social accounts by name may link a few accounts to the wrong member.
+
+Suggested leaderboard comment: `Group - R, X-learner uplift (LightGBM) + name-matched social data, send if uplift > marginal cost, 452,954 kits`.
