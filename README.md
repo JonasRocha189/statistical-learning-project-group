@@ -15,7 +15,7 @@ The assignment has two parts, and the point is to compare them:
 | Part | Folder | What it is |
 |---|---|---|
 | 1 | [1-ai/](1-ai/) | The solution an AI produces when used by someone with no data science training. |
-| 2 | [2-group/](2-group/) | The team's own solution, using course knowledge (AI still allowed). Not started yet. |
+| 2 | [2-group/](2-group/) | The team's own solution, using course knowledge (AI still allowed). In progress; see its README. |
 
 The code is in R, which the brief says is rewarded. An earlier Python version of part 1 is kept in [python/](python/) for reference; it uses the same approach and is no longer maintained.
 
